@@ -1,0 +1,25 @@
+{
+  "schema_version": 2,
+  "mod_info": {
+    "name": "PortalWithRTXHeadTracking",
+    "version": "0.0.0",
+    "game_id": "portal-with-rtx"
+  },
+  "strategy": "AsiLoader",
+  "delivery_mode": "manifest",
+
+  "files": [
+    {
+      "source": "vendor/ultimate-asi-loader/dinput8.dll",
+      "target": "bin/winmm.dll",
+      "backup": true
+    },
+    {
+      "source": "plugins/PortalWithRTXHeadTracking.asi",
+      "target": "bin/PortalWithRTXHeadTracking.asi"
+    }
+  ],
+
+  "runtime_requirements": [],
+  "dependencies": []
+}

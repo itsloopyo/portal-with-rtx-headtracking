@@ -1,0 +1,73 @@
+[workspace]
+name = "portal-with-rtx-head-tracking"
+version = "0.0.0"
+description = "Head tracking mod for Portal with RTX (Source Engine) using the CameraUnlock shared library"
+license = "MIT"
+license-file = "LICENSE"
+channels = ["conda-forge"]
+platforms = ["win-64"]
+
+[tasks]
+# Pull cameraunlock-core to the tip of its tracked branch. Manual: the new
+# pointer is a deliberate commit, no build task depends on this.
+sync = { cmd = "git submodule update --remote cameraunlock-core" }
+
+# Refresh vendor/ultimate-asi-loader from upstream. Manual and deliberate: the
+# vendored DLL is the install-time source of truth, so no build, package or CI
+# task depends on this - review the diff and commit it.
+update-deps = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/update-deps.ps1" }
+
+# Strip the third-party DLLs the upstream x86 loader embeds as resources
+# (binkw32.dll, wndmode.dll, vorbisfile.dll). update-deps runs this already;
+# the task exists for a loader copied in by hand.
+strip-loader = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/strip-loader-payload.ps1 -Path vendor/ultimate-asi-loader/dinput8.dll" }
+
+# Portal with RTX runs the 32-bit Source engine (hl2.exe) - build x86.
+# No -G: let CMake auto-detect the installed Visual Studio generator.
+# Gated on the generated solution, not on the directory: `cmake -B build`
+# creates build/ and writes CMakeCache.txt BEFORE it can fail, so a directory
+# test leaves a failed configure (a missing submodule, most often) skipping
+# setup forever and every later task dying on "MSB1009: Project file does not
+# exist" instead of the real error.
+#
+# The wildcard covers both spellings. No -G is passed, so the generator is
+# whatever the machine has, and VS 2022 writes .sln where VS 2026 writes .slnx -
+# naming one of them re-runs cmake on every task for everyone on the other.
+setup = { cmd = """
+    powershell -Command "if (-not (Test-Path 'build/PortalWithRTXHeadTracking.sln*')) { cmake -B build -A Win32 } else { Write-Host 'Build directory exists, skipping setup' -ForegroundColor Yellow }"
+""" }
+
+build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
+build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
+
+# Characterization tests for the mod's pure logic (tests/). No game needed.
+# --no-tests=error because ctest's default exits 0 when it finds no tests at
+# all, so a suite that silently stopped being registered would report success
+# here and in CI, and this is the only gate on the Source camera maths.
+test = { cmd = "ctest --test-dir build -C Debug --output-on-failure --no-tests=error", depends-on = ["build"] }
+
+clean = { cmd = """
+    powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; Write-Host 'Build artifacts cleaned' -ForegroundColor Green"
+""" }
+
+clean-all = { cmd = """
+    powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }; Write-Host 'All build artifacts cleaned' -ForegroundColor Green"
+""" }
+
+# Package both release ZIPs (installer + nexus) into release/. Consumes the
+# vendored loader exactly as committed - refreshing it is update-deps' job.
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release"] }
+
+# Cut a release: pixi run release <major|minor|patch|X.Y.Z>. Unattended - the
+# invocation is the authorization, so the script never asks anything.
+release = "powershell -ExecutionPolicy Bypass -File scripts/release.ps1"
+
+# Print the installed client.dll's PE fingerprint as a build-profile stub.
+# First step whenever a patch lands or a user reports the dormant log line.
+check-fingerprint = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/check-fingerprint.ps1" }
+
+# Build + dev-deploy the debug .asi straight into <game>\bin.
+install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 Debug", depends-on = ["build"] }
+uninstall = "powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1"
+
+[dependencies]
