@@ -8,7 +8,7 @@ An unofficial head tracking mod for Portal with RTX that moves the view with you
 
 - **Decoupled look and aim** - head tracking moves the view; the portal gun still aims with your mouse or controller
 - **6DOF positional tracking** - lean in and peek around corners with head position
-- **Works with any OpenTrack-compatible source** - webcam, phone app, or anything else that sends the OpenTrack UDP protocol
+- **Works with any OpenTrack compatible tracker** - free options available for PC, iOS and Android
 
 ## Requirements
 
@@ -17,6 +17,13 @@ An unofficial head tracking mod for Portal with RTX that moves the view with you
 - Windows 10 or 11. Portal with RTX runs the 32-bit Source engine, and the mod ships as a 32-bit `.asi`.
 
 ## Installation
+
+### Lopari
+
+Download [Lopari](https://lopari.app), choose **Portal with RTX**, and click
+**Play with head tracking**.
+
+### Standalone Installer
 
 1. Download the installer ZIP from the [Releases](https://github.com/itsloopyo/portal-with-rtx-headtracking/releases) page.
 2. Extract it anywhere.
