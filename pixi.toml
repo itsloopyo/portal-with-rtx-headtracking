@@ -41,7 +41,8 @@ setup = { cmd = """
 build = { cmd = "cmake --build build --config Debug", depends-on = ["setup"] }
 build-release = { cmd = "cmake --build build --config Release", depends-on = ["setup"] }
 
-# Characterization tests for the mod's pure logic (tests/). No game needed.
+# Characterization tests for the mod's pure logic (tests/), and the config differential test,
+# which holds the frozen HeadTracking.ini reader to the newest published build's. No game needed.
 # --no-tests=error because ctest's default exits 0 when it finds no tests at
 # all, so a suite that silently stopped being registered would report success
 # here and in CI, and this is the only gate on the Source camera maths.
@@ -57,7 +58,9 @@ clean-all = { cmd = """
 
 # Package both release ZIPs (installer + nexus) into release/. Consumes the
 # vendored loader exactly as committed - refreshing it is update-deps' job.
-package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release"] }
+# Depends on test, so no ZIP is built from a tree whose tests or config
+# differential test fail.
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
 
 # Cut a release: pixi run release <major|minor|patch|X.Y.Z>. Unattended - the
 # invocation is the authorization, so the script never asks anything.
@@ -72,3 +75,6 @@ install = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/deploy.ps1 D
 uninstall = "powershell -ExecutionPolicy Bypass -File scripts/uninstall.ps1"
 
 [dependencies]
+# CMake and Visual Studio come from the system. Node runs the manifest and config checks
+# packaging calls at this core pin, pinned to the build cameraunlock-core's own lock resolved.
+nodejs = "==26.5.0"
