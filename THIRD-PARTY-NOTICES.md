@@ -686,7 +686,7 @@ THIS SOFTWARE IS PROVIDED BY THE COPYRIGHT HOLDERS AND CONTRIBUTORS "AS IS" AND 
 
 ## cameraunlock-core
 
-- **Version:** commit `747d63e7712b1d250df37c718a8f9331f93697fc`
+- **Version:** commit `3f3a821aa00d5b87ecde7c4af77585ff2fc71ff5`
 - **License:** MIT
 - **Upstream:** https://github.com/itsloopyo/cameraunlock-core
 - **Usage:** The shared head-tracking library: UDP receiver, pose interpolation, smoothing, hook manager, and the shared install and game-detection scripts. Our own code, reproduced here so the notices are complete.
