@@ -56,6 +56,16 @@ clean-all = { cmd = """
     powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; if (Test-Path 'release') { Remove-Item 'release' -Recurse -Force }; Write-Host 'All build artifacts cleaned' -ForegroundColor Green"
 """ }
 
+# Rewrite config/CameraUnlock.ini, the committed copy of the file the mod creates at first
+# launch, from the config table after a change to a row, a comment or a default, then rewrite the
+# per_game of launcher-manifest.json's config descriptor from it. portal_rtx_config_tests fails
+# while the two differ.
+render-config = { cmd = "build/tests/Debug/portal_rtx_config_tests.exe --render-config config/CameraUnlock.ini && node cameraunlock-core/scripts/encode-seed.mjs", depends-on = ["build"] }
+
+# Checks the newest installer and Nexus ZIPs in release/ against core's manifest and config
+# rules. Run it after package.
+validate-manifest = "node cameraunlock-core/scripts/validate-manifest.mjs"
+
 # Package both release ZIPs (installer + nexus) into release/. Consumes the
 # vendored loader exactly as committed - refreshing it is update-deps' job.
 # Depends on test, so no ZIP is built from a tree whose tests or config

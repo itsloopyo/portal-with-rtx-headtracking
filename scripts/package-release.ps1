@@ -64,9 +64,9 @@ $installerStage = Join-Path $outDir "$modSlug-installer-stage"
 if (Test-Path $installerStage) { Remove-Item $installerStage -Recurse -Force }
 New-Item -ItemType Directory -Path $installerStage | Out-Null
 
-# install.cmd copies plugins\ into <game>\bin. HeadTracking.ini is not shipped:
-# the mod writes its own defaults next to hl2.exe on first launch, and a seeded
-# copy would reset whatever the user tuned on every update.
+# install.cmd copies plugins\ into <game>\bin. No config is shipped: the mod
+# creates CameraUnlock.ini next to hl2.exe on first launch, importing
+# HeadTracking.ini when an earlier version left one there.
 $pluginsDir = Join-Path $installerStage 'plugins'
 New-Item -ItemType Directory -Path $pluginsDir | Out-Null
 Copy-Item $asiPath $pluginsDir

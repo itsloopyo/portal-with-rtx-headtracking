@@ -31,18 +31,20 @@ public:
     bool GetRotationRadians(float& yaw, float& pitch, float& roll) const;
     bool GetPositionOffset(float& x, float& y, float& z) const;
 
-    // Called from the hotkey thread. The change itself lands in the next
-    // Update() on the render thread - see the definition.
-    void RequestCycleMode();
+    // Called from the hotkey thread. Returns the mode after the one Update()
+    // last applied, which the change itself sets in the next Update() on the
+    // render thread - see the definition.
+    cameraunlock::TrackingMode RequestNextMode();
 
-    // Applies a pending mode change immediately, for the dormant build where no
-    // render thread ever runs to consume the request. Never call it while the
-    // camera hook is installed.
-    void CycleModeNow();
+    // Moves to the next mode immediately and returns it, for the dormant build
+    // where no render thread ever runs to consume a request. Never call it
+    // while the camera hook is installed.
+    cameraunlock::TrackingMode CycleModeNow();
+
+    const char* ModeName() const;
 
 private:
     void Invalidate();
-    const char* ModeName() const;
     // Logs which smoothing parameter is in force when this feed's tracker
     // switches between local and remote. The session does the selection.
     void LogConnectionChange();
@@ -58,7 +60,8 @@ private:
                   "receiver must expose IsRemoteConnection() or remote smoothing never applies");
     cameraunlock::time::FrameClock m_frameClock;
 
-    std::atomic<bool> m_cycleRequested{false};
+    std::atomic<bool> m_modeRequested{false};
+    std::atomic<cameraunlock::TrackingMode> m_desiredMode{cameraunlock::TrackingMode::RotationAndPosition};
 
     bool m_isRemoteConnection = false;
     // Tri-state: false/false is indistinguishable from a local tracker, so a

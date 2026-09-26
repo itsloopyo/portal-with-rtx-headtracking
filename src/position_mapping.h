@@ -8,35 +8,27 @@
 namespace headtracking {
 
 // Config -> core PositionSettings. Pure and header-only so tests/ can lock it:
-// both mappings below are silent when wrong (the camera still moves, only the
-// travel is off), which is exactly the failure no in-game playtest catches.
+// a limit landing on the wrong bound is silent when wrong (the camera still
+// moves, only the travel is off), which is exactly the failure no in-game
+// playtest catches.
+//
+// Only the five limits come across. The sensitivities stay at identity: the
+// tracker shapes the pose. The processor's own inversion stays off: the
+// tracker-to-Source axis signs are a fixed conversion applied at the engine
+// boundary in tracker_axes.h, AFTER the asymmetric Z clamp below. Inverting
+// here would happen before it, which silently swaps the generous 0.40m forward
+// allowance onto the backward lean and leaves 0.10m for leaning in - the
+// direction looks fixed while the travel quietly breaks.
 inline cameraunlock::PositionSettings MakePositionSettings(const Config& c) {
     cameraunlock::PositionSettings ps;
-    ps.sensitivity_x = c.pos_sens_x;
-    ps.sensitivity_y = c.pos_sens_y;
-    ps.sensitivity_z = c.pos_sens_z;
-
-    // The processor's own inversion stays off. The tracker-to-Source axis signs
-    // are a fixed conversion applied at the engine boundary in tracker_axes.h,
-    // AFTER the asymmetric Z clamp below. Inverting here would happen before it,
-    // which silently swaps the generous 0.40m forward allowance onto the
-    // backward lean and leaves 0.10m for leaning in - the direction looks fixed
-    // while the travel quietly breaks.
-    ps.invert_x = false;
-    ps.invert_y = false;
-    ps.invert_z = false;
-
-    ps.limit_x = c.pos_limit_x;
-    // limit_y bounds UPWARD travel only; limit_y_down is a separate field with
-    // its own default, so leaving it unset pins downward travel at the core's
-    // 0.20m whatever the user put in LimitY. The INI exposes one vertical
-    // limit, so it has to reach both bounds.
-    ps.limit_y = c.pos_limit_y;
-    ps.limit_y_down = c.pos_limit_y;
-    // Z stays asymmetric: the INI exposes both bounds separately because
-    // leaning in wants far more room than pulling back (player-model clipping).
-    ps.limit_z = c.pos_limit_z;
-    ps.limit_z_back = c.pos_limit_z_back;
+    ps.limit_x = c.position.limit_x;
+    ps.limit_y = c.position.limit_y;
+    ps.limit_y_down = c.position.limit_y_down;
+    // Z stays asymmetric: leaning in wants far more room than pulling back
+    // (player-model clipping). The processor clamps z to
+    // [-limit_z, +limit_z_back].
+    ps.limit_z = c.position.limit_z;
+    ps.limit_z_back = c.position.limit_z_back;
 
     // local_smoothing / remote_smoothing are left at their defaults on purpose:
     // the session owns that pair and writes it into these settings on every

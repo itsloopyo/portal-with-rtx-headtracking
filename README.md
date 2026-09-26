@@ -52,7 +52,7 @@ The payload goes into the game's `bin` folder, not the folder holding `hl2.exe`.
 
 The Nexus ZIP is already in this shape: extract it over the game folder and it drops `bin\PortalWithRTXHeadTracking.asi` into place. It does not bundle a loader, so take `dinput8.dll` from the installer ZIP on the Releases page, or from an Ultimate ASI Loader release of your own, and put it at `<game>\bin\winmm.dll` as in step 1.
 
-On first launch the mod writes `HeadTracking.ini` next to `hl2.exe`, in the game's root folder.
+On first launch the mod writes `CameraUnlock.ini` next to `hl2.exe`, in the game's root folder.
 
 ## Setting Up OpenTrack
 
@@ -87,21 +87,147 @@ A phone on WiFi is a remote connection and gets `RemoteSmoothing`. So does a tra
 
 ## Controls
 
-Both columns do the same thing. Use whichever your keyboard has.
+Each action has a list of keys, and any key in it fires the action. By default
+each list holds a nav-cluster key and a chord, so use whichever your keyboard has.
 
-| Action | Nav cluster | Chord |
-|--------|-------------|-------|
-| Toggle head tracking | `End` | `Ctrl+Shift+Y` |
-| Cycle tracking mode (full, rotation only, position only) | `Page Up` | `Ctrl+Shift+G` |
-| Toggle yaw mode (world-locked, camera-local) | `Page Down` | `Ctrl+Shift+H` |
+| Action | Default keys | Setting |
+|--------|--------------|---------|
+| Toggle head tracking | `End`, `Ctrl+Shift+Y` | `ToggleKey` |
+| Cycle tracking mode (full, rotation only, position only) | `PageUp`, `Ctrl+Shift+G` | `CycleTrackingModeKey` |
+| Toggle yaw mode (world-locked, camera-local) | `PageDown`, `Ctrl+Shift+H` | `YawModeKey` |
+
+The tracking mode and the yaw mode are saved to `CameraUnlock.ini` the moment
+they change, so the next launch starts in the mode you left it in. `End` turns
+tracking on and off for the session only and saves nothing: whether tracking is
+on at launch is `EnableOnStartup`.
+
+Every key in the three lists, the chords included, can be changed or removed
+under `[Hotkeys]` in `CameraUnlock.ini`, for example `ToggleKey=F8, Ctrl+Shift+Y`.
 
 ## Configuration
 
-`HeadTracking.ini` sits in the game's root folder, next to `hl2.exe`. It is written with these defaults on first launch, and read again each time the game starts.
+<!-- cameraunlock:config -->
+The mod reads its settings from `CameraUnlock.ini` in the game folder, and creates the file when it starts and finds none. Edit it with any text editor.
+
+A setting set to `default` takes its value from `Defaults.ini`, which every head tracking mod that keeps its settings in `CameraUnlock.ini` reads. Head tracking mods that keep their settings in another file do not read it, and neither do earlier versions of this mod. Writing a value in place of `default` changes that setting for this game only. When the mod saves a setting that a hotkey changed in game, it writes the new value in place of `default`, so that setting no longer follows `Defaults.ini` in this game until you set it to `default` again.
+
+`Defaults.ini` is `%AppData%\CameraUnlock\Defaults.ini` on Windows; `$XDG_CONFIG_HOME/CameraUnlock/Defaults.ini` on Linux, or `~/.config/CameraUnlock/Defaults.ini` where `XDG_CONFIG_HOME` is not set, under Wine and Proton too; and `~/Library/Application Support/CameraUnlock/Defaults.ini` on macOS. The mod's log, where it writes one, names the file it read.
+
+When the mod starts and finds no `Defaults.ini`, it creates one holding the built-in values, unless Windows runs the game as a packaged app. The mod never changes `Defaults.ini` after that. Edit it with any text editor.
+
+Earlier versions of the mod kept these settings in `HeadTracking.ini`, in the same folder. The first time this version starts and finds no `CameraUnlock.ini`, it reads your settings from `HeadTracking.ini` and writes them into `CameraUnlock.ini`. It never changes `HeadTracking.ini`, and does not read it again while `CameraUnlock.ini` exists.
+
+A setting that the defaults below set to `default` is written as `default` when the value imported for it equals its default at that start, which is the value `Defaults.ini` gives it, or the built-in value where `Defaults.ini` gives none. It then follows `Defaults.ini`. Every other setting is written with the value imported for it. `RotationEnabled` and `PositionEnabled` are one setting here, the tracking mode, so both are written as `default` or neither is.
+
+Comments, and keys the mod never read, are not carried over. Nor are these, where your old file had them:
+
+- Reticle settings, and a key that toggled the reticle.
+- A sensitivity, scale, deadzone, response curve or axis inversion you changed from its default. Set these in your tracker instead.
+- The setting for a feature that earlier versions shipped switched off while it was untested. It now follows the mod's default.
+
+An older version of the mod reads `HeadTracking.ini` and never reads `CameraUnlock.ini`, so a setting you change after updating is not in `HeadTracking.ini`.
+
+Deleting only `CameraUnlock.ini` makes the next start read `HeadTracking.ini` again. To go back to the defaults, replace everything in `CameraUnlock.ini` with the defaults below. Every setting they set to `default` then follows `Defaults.ini`.
+
+The built-in value of each setting set to `default` below:
+
+- `UdpPort=4242`
+- `EnableOnStartup=true`
+- `WorldSpaceYaw=true`
+- `RotationEnabled=true`
+- `LocalSmoothing=0.0`
+- `RemoteSmoothing=0.15`
+- `PositionEnabled=true`
+- `PositionLimitX=0.3`
+- `PositionLimitY=0.2`
+- `PositionLimitYDown=0.2`
+- `PositionLimitZ=0.4`
+- `PositionLimitZBack=0.1`
+- `ToggleKey=End, Ctrl+Shift+Y`
+- `CycleTrackingModeKey=PageUp, Ctrl+Shift+G`
+- `YawModeKey=PageDown, Ctrl+Shift+H`
+
+With every setting at its default, the file reads:
+
+```ini
+; Portal with RTX head tracking settings.
+; Comments start with ; and go on their own line. Text after a value is part of the value.
+; Hotkeys are key names such as End, PageUp or Ctrl+Shift+Y. Separate several with commas; leave empty for none.
+; A setting set to default takes its value from Defaults.ini, which every head tracking mod
+; that keeps its settings in CameraUnlock.ini reads: %AppData%\CameraUnlock\Defaults.ini on
+; Windows, $XDG_CONFIG_HOME/CameraUnlock/Defaults.ini (normally ~/.config/CameraUnlock) on
+; Linux, under Wine and Proton too, and ~/Library/Application Support/CameraUnlock/Defaults.ini
+; on macOS. The log names the file it read. Write a value instead of default to change that
+; setting for this game only.
+
+[CameraUnlock]
+; Written by the mod. Leave this section in place.
+ConfigFormat=1
+
+[Network]
+; UDP port the mod receives tracker data on (OpenTrack protocol).
+UdpPort=default
+
+[General]
+; true: head tracking is on when the game starts. ToggleKey turns it on and off.
+EnableOnStartup=default
+; true: yaw turns around the world's up axis. false: around the camera's own up axis.
+WorldSpaceYaw=default
+; true: turning your head turns the view.
+; Tracking mode at startup, with PositionEnabled. The mode hotkey changes both.
+RotationEnabled=default
+
+[Smoothing]
+; Smoothing when the tracker runs on this PC. 0 is the least, 1 the most.
+LocalSmoothing=default
+; Smoothing when the tracker is another device on the network, such as a phone.
+; 0 is the least, 1 the most.
+RemoteSmoothing=default
+
+[Position]
+; true: moving your head moves the view.
+; Tracking mode at startup, with RotationEnabled. The mode hotkey changes both.
+PositionEnabled=default
+; How far, in metres, leaning left or right can move the view.
+PositionLimitX=default
+; How far, in metres, raising your head can move the view.
+PositionLimitY=default
+; How far, in metres, lowering your head can move the view.
+PositionLimitYDown=default
+; How far, in metres, leaning forward can move the view.
+PositionLimitZ=default
+; How far, in metres, leaning back can move the view.
+PositionLimitZBack=default
+
+[Hotkeys]
+; Turns head tracking on and off.
+ToggleKey=default
+; Changes the tracking mode: rotation and position, rotation only, position only.
+CycleTrackingModeKey=default
+; Switches yaw between the world's up axis and the camera's own (WorldSpaceYaw).
+YawModeKey=default
+
+[View]
+; Field of view in degrees, as the game's fov_desired: horizontal, at 4:3, and the mod
+; widens it for your screen as the game does. 0 leaves the game's own. Otherwise 30 to
+; 150, which fov_desired's own 75 to 120 does not bound. Applies only while head
+; tracking is on.
+Fov=0.0
+; Field of view the gun in your hands is drawn with, in the same degrees. A wider Fov
+; leaves the gun looking oversized: lower this to shrink it. 0 leaves the game's own.
+FovViewmodel=0.0
+
+[Debug]
+; true: write HeadTracking.log beside hl2.exe, new at every launch, with the launch before
+; kept as HeadTracking.prev.log. It records the build profile, the tracker connection and
+; the view the mod draws. Attach it to a bug report.
+LogToFile=true
+```
+<!-- /cameraunlock:config -->
 
 The game has its own field of view control: **Options > Video > Advanced**, where
 the slider runs from 75 to 90. The console cvar behind it, `fov_desired`, takes
-75 to 120. The `[View] Fov` key below is for going outside that: it is written
+75 to 120. The `[View] Fov` setting is for going outside that: it is written
 into the view the frame is rendered from rather than into the cvar, so it accepts
 30 to 150 and does not travel in your userinfo. `FovViewmodel` has no in-game
 control at all, because `viewmodel_fov` is a cheat cvar. Use the game's slider if
@@ -111,94 +237,27 @@ Whichever you use, head tracking moves the view by the same amount on screen:
 the pose is scaled for the field of view the frame is actually being rendered at,
 so a wider setting does not make tracking feel stronger.
 
-```ini
-; Portal with RTX head tracking - default config
-
-[Network]
-Port=4242
-EnableOnStartup=1
-
-[Sensitivity]
-; Scales the tracker's rotation before it reaches the view. 1 is 1:1,
-; and the accepted range is 0.1 to 3. A value outside it is refused and
-; noted in the log. Shape the pose in your tracker app instead where you
-; can - a profile there behaves the same in every game.
-Yaw=1
-Pitch=1
-Roll=1
-
-[Smoothing]
-; Picked per connection from the tracker's source address, and applied
-; to both rotation and position. 0 = no smoothing, 1 = heavy.
-; LocalSmoothing: tracker runs on this machine (loopback)
-LocalSmoothing=0
-; RemoteSmoothing: tracker is a remote device on the network
-RemoteSmoothing=0.15
-
-[Position]
-; 6DOF head position, applied to the render view origin only
-Enabled=1
-; Scales head travel before the limits below, so the envelope keeps
-; meaning metres. 1 is 1:1 with your real head movement, and the
-; accepted range is 0 to 5.
-SensX=1
-SensY=1
-SensZ=1
-; Movement envelope in metres, each accepted from 0.01 to 0.5. Z is
-; asymmetric on purpose: leaning in gets more room than pulling back,
-; which would clip the player model.
-LimitX=0.3
-LimitY=0.2
-LimitZ=0.4
-LimitZBack=0.1
-
-[Hotkeys]
-Toggle=0x23
-YawMode=0x22
-; Page Up: cycle 6DOF -> rotation-only -> position-only
-ModeCycle=0x21
-
-[View]
-; true = horizon-locked yaw (default), false = camera-local yaw
-WorldSpaceYaw=1
-; Field of view, same units as the game's fov_desired cvar (horizontal
-; degrees at 4:3; the mod widens it for your real aspect ratio as the
-; engine does). Written into the render view rather than the cvar, so it
-; is not bound by fov_desired's own range. Accepted from 30 to 150, or
-; 0 to leave the game's FOV alone. Applies only while tracking is
-; enabled (End).
-Fov=0
-; The weapon is drawn with its own FOV. Widening Fov leaves the gun
-; looking oversized against the wider world: LOWER this to shrink it.
-; 0 = leave the game's viewmodel FOV alone.
-FovViewmodel=0
-
-[Debug]
-; Writes HeadTracking.log next to hl2.exe, fresh every launch (the
-; previous session is kept as HeadTracking.prev.log, and nothing else). It
-; records the build profile, the tracker connection and the pose being
-; applied. That is the file to attach to a bug report - leave it on.
-LogToFile=1
-```
+The settings are read once at startup, so restart the game after editing the
+file.
 
 ## Troubleshooting
 
 **Mod not loading**
 
 - Check that both `winmm.dll` and `PortalWithRTXHeadTracking.asi` are in the game's `bin` folder. A copy beside `hl2.exe` is never loaded.
-- Check that `HeadTracking.log` appears next to `hl2.exe` after a launch. No log file at all means either `LogToFile=0` in the ini, or the loader never ran the mod - check the ini first.
+- Check that `HeadTracking.log` appears next to `hl2.exe` after a launch. No log file at all means either `LogToFile=false` under `[Debug]` in `CameraUnlock.ini`, or the loader never ran the mod - check the file first.
 - If the log says no build profile matches this `client.dll`, the game has been patched to a build this mod does not know yet. The mod stays dormant and the game runs vanilla, so check the Releases page for an update.
 
 **No tracking response**
 
-- Confirm the tracker is sending to `127.0.0.1:4242`, or to your PC's LAN IP on port `4242` from a phone, and that `Port` in the ini matches.
-- Press `End` (or `Ctrl+Shift+Y`). Tracking may be toggled off, and `EnableOnStartup=0` in the ini starts it off.
+- Confirm the tracker is sending to `127.0.0.1:4242`, or to your PC's LAN IP on port `4242` from a phone, and that `UdpPort` in `CameraUnlock.ini` matches.
+- Press `End` (or `Ctrl+Shift+Y`). Tracking may be toggled off, and `EnableOnStartup=false` in `CameraUnlock.ini` starts it off.
 - Tracking is suppressed outside gameplay, so the menu backdrop, the pause menu and loading screens do not move. Load a save and try there.
 - If the tracker is on another device, allow the game through the Windows firewall on the private network.
 
 **Jittery or unstable tracking**
 
-- Raise `RemoteSmoothing` for a phone or a device over WiFi. It sets how long the view takes to settle: the `0.15` default is a 23.5ms time constant, `0.3` is 28.5ms, and the scale runs to 10s at `1.0`. Small steps do very little, so move it in large ones.
+- Raise `RemoteSmoothing` in `CameraUnlock.ini` for a phone or a device over WiFi. It sets how long the view takes to settle: the `0.15` default is a 23.5ms time constant, `0.3` is 28.5ms, and the scale runs to 10s at `1.0`. Small steps do very little, so move it in large ones.
 - If your tracker sends a raw feed, route it through OpenTrack and use its filters rather than leaning on the mod's smoothing.
 - A webcam feed that jitters usually wants more light and a higher camera frame rate before it wants more smoothing.
 
@@ -209,11 +268,11 @@ LogToFile=1
 
 ## Updating
 
-Download the new release and run `install.cmd` again. Your config is preserved.
+Download the new release and run `install.cmd` again. Your settings in `CameraUnlock.ini` are kept, and the installer does not touch `HeadTracking.ini`.
 
 ## Uninstalling
 
-Run `uninstall.cmd`. This removes the mod, and `HeadTracking.ini` and its logs from the game folder, so back the ini up first if you want to keep your tuning. The ASI loader is only removed if the installer put it there. Use `uninstall.cmd /force` to remove it anyway.
+Run `uninstall.cmd`. This removes the mod and its logs from the game folder, and leaves `CameraUnlock.ini` and `HeadTracking.ini` in place, so a reinstall keeps your settings. The ASI loader is only removed if the installer put it there. Use `uninstall.cmd /force` to remove it anyway.
 
 ## Building from Source
 

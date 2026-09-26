@@ -17,28 +17,17 @@ namespace {
 using headtracking::Config;
 using headtracking::MakePositionSettings;
 
-void TestVerticalLimitIsSymmetric() {
-    std::printf("PositionSettings vertical limit\n");
+void TestVerticalLimitsMapToTheirOwnBounds() {
+    std::printf("PositionSettings vertical limits\n");
 
-    // The INI exposes a single LimitY, so it must reach both bounds. The core
-    // struct has a separate limit_y_down that defaults to 0.20 independently:
-    // leaving it unset pinned downward travel at 0.20m no matter what the user
-    // configured, so LimitY = 0.40 gave 0.40 up and 0.20 down.
+    // PositionLimitY bounds upward travel and PositionLimitYDown downward, and
+    // neither takes its value from the other.
     Config c;
-    c.pos_limit_y = 0.40f;
-    const auto raised = MakePositionSettings(c);
-    Check(raised.limit_y == 0.40f, "LimitY raises the upward bound");
-    Check(raised.limit_y_down == 0.40f, "LimitY raises the downward bound too");
-
-    c.pos_limit_y = 0.05f;
-    const auto tightened = MakePositionSettings(c);
-    Check(tightened.limit_y == 0.05f, "LimitY lowers the upward bound");
-    Check(tightened.limit_y_down == 0.05f, "LimitY lowers the downward bound too");
-
-    const auto defaults = MakePositionSettings(Config{});
-    Check(defaults.limit_y == headtracking::kDefaultPosLimitY
-              && defaults.limit_y_down == headtracking::kDefaultPosLimitY,
-          "default LimitY reaches both bounds");
+    c.position.limit_y = 0.40f;
+    c.position.limit_y_down = 0.05f;
+    const auto ps = MakePositionSettings(c);
+    Check(ps.limit_y == 0.40f, "PositionLimitY maps to the upward bound");
+    Check(ps.limit_y_down == 0.05f, "PositionLimitYDown maps to the downward bound");
 }
 
 void TestForwardLeanKeepsTheGenerousBound() {
@@ -48,37 +37,37 @@ void TestForwardLeanKeepsTheGenerousBound() {
     // [-limit_z, +limit_z_back], so the generous allowance has to sit on
     // limit_z (leaning in) and the tight one on limit_z_back (pulling back).
     const auto ps = MakePositionSettings(Config{});
-    Check(ps.limit_z == headtracking::kDefaultPosLimitZ, "LimitZ maps to the forward bound");
-    Check(ps.limit_z_back == headtracking::kDefaultPosLimitZBack,
-          "LimitZBack maps to the backward bound");
+    Check(ps.limit_z == 0.40f, "PositionLimitZ maps to the forward bound");
+    Check(ps.limit_z_back == 0.10f, "PositionLimitZBack maps to the backward bound");
     Check(ps.limit_z > ps.limit_z_back, "forward lean keeps the generous allowance");
 }
 
-void TestInversionNeverReachesTheProcessor() {
-    std::printf("PositionSettings inversion\n");
+void TestNothingShapesThePose() {
+    std::printf("PositionSettings sensitivity and inversion\n");
 
     // The tracker-to-Source axis signs are applied at the engine boundary,
     // AFTER the asymmetric Z clamp. Letting an inversion through here would
     // invert BEFORE the clamp, which swaps the 0.40m forward allowance onto the
-    // backward lean - direction fixed, travel quietly broken.
-    const auto ps = MakePositionSettings(Config{});
+    // backward lean - direction fixed, travel quietly broken. The gain is the
+    // tracker's, so it stays at identity.
+    Config c;
+    c.position.sensitivity_x = 2.0f;
+    c.position.invert_z = true;
+    const auto ps = MakePositionSettings(c);
     Check(!ps.invert_x && !ps.invert_y && !ps.invert_z,
           "the processor's own inversion stays off");
+    Check(ps.sensitivity_x == 1.0f && ps.sensitivity_y == 1.0f && ps.sensitivity_z == 1.0f,
+          "position sensitivity stays at identity");
 }
 
-void TestSensitivityAndLimitsMapStraightThrough() {
-    std::printf("PositionSettings sensitivity and limits\n");
+void TestLimitsMapStraightThrough() {
+    std::printf("PositionSettings limits\n");
 
     Config c;
-    c.pos_sens_x = 1.5f;
-    c.pos_sens_y = 2.0f;
-    c.pos_sens_z = 2.5f;
-    c.pos_limit_x = 0.11f;
-    c.pos_limit_z = 0.22f;
-    c.pos_limit_z_back = 0.33f;
+    c.position.limit_x = 0.11f;
+    c.position.limit_z = 0.22f;
+    c.position.limit_z_back = 0.33f;
     const auto ps = MakePositionSettings(c);
-    Check(ps.sensitivity_x == 1.5f && ps.sensitivity_y == 2.0f && ps.sensitivity_z == 2.5f,
-          "per-axis sensitivity maps straight through");
     Check(ps.limit_x == 0.11f && ps.limit_z == 0.22f && ps.limit_z_back == 0.33f,
           "per-axis limits map straight through");
 }
@@ -87,9 +76,9 @@ void TestSensitivityAndLimitsMapStraightThrough() {
 
 int RunPositionMappingTests() {
     std::printf("\nPosition mapping\n================\n");
-    TestVerticalLimitIsSymmetric();
+    TestVerticalLimitsMapToTheirOwnBounds();
     TestForwardLeanKeepsTheGenerousBound();
-    TestInversionNeverReachesTheProcessor();
-    TestSensitivityAndLimitsMapStraightThrough();
+    TestNothingShapesThePose();
+    TestLimitsMapStraightThrough();
     return g_failures;
 }

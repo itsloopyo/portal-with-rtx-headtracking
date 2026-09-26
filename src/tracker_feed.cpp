@@ -4,35 +4,23 @@
 
 #include "angles.h"
 #include "cameraunlock/math/smoothing_utils.h"
+#include "cameraunlock/tracking/tracking_mode.h"
 #include "debug_log.h"
 #include "position_mapping.h"
 
 namespace headtracking {
 
-namespace {
-
-// Sensitivity only. Inversion and deadzone are left at the processor's own
-// defaults (off) and are not exposed: the tracker owns pose shaping, so a
+// The rotation processor keeps its own sensitivity, inversion and deadzone
+// defaults (identity, off, none): the tracker owns pose shaping, so a gain, a
 // deadzone or a flipped axis belongs in the tracker app's profile where it
 // behaves the same in every game. The engine's own axis conversion is a fixed
 // sign table at the boundary in tracker_axes.h, not a user preference.
-void ApplyRotationConfig(cameraunlock::TrackingProcessor& processor, const Config& c) {
-    cameraunlock::SensitivitySettings s;
-    s.yaw = c.sens_yaw;
-    s.pitch = c.sens_pitch;
-    s.roll = c.sens_roll;
-    processor.SetSensitivity(s);
-}
-
-}  // namespace
-
 void TrackerFeed::Start(const Config& config) {
-    m_port = config.port;
-    m_session.SetMode(config.pos_enabled
-                          ? cameraunlock::TrackingMode::RotationAndPosition
-                          : cameraunlock::TrackingMode::RotationOnly);
+    m_port = static_cast<uint16_t>(config.udp_port);
+    // The table reads a pair that names no mode as its defaults, so the pair always decodes.
+    m_session.SetMode(
+        cameraunlock::DecodeTrackingMode(config.rotation_enabled, config.position_enabled).value());
 
-    ApplyRotationConfig(m_session.GetProcessor(), config);
     m_session.SetLocalSmoothing(config.local_smoothing);
     m_session.SetRemoteSmoothing(config.remote_smoothing);
     // Through the session, not straight onto the processor: the session owns
@@ -80,11 +68,21 @@ void TrackerFeed::Invalidate() {
 // reading on the render thread, and this runs on the hotkey poller's thread. A
 // press landing mid-frame could otherwise be observed half-applied, which is a
 // bogus velocity term and a one-frame camera jerk.
-void TrackerFeed::RequestCycleMode() { m_cycleRequested.store(true, std::memory_order_release); }
+//
+// Only Update() sets the session's mode while the hook is installed, so
+// GetMode() here is the mode the render thread last applied.
+cameraunlock::TrackingMode TrackerFeed::RequestNextMode() {
+    const auto next = static_cast<cameraunlock::TrackingMode>(
+        (static_cast<int>(m_session.GetMode()) + 1) % 3);
+    m_desiredMode.store(next, std::memory_order_release);
+    m_modeRequested.store(true, std::memory_order_release);
+    return next;
+}
 
-void TrackerFeed::CycleModeNow() {
-    m_session.CycleMode();
+cameraunlock::TrackingMode TrackerFeed::CycleModeNow() {
+    const cameraunlock::TrackingMode mode = m_session.CycleMode();
     HT_LOG("[plugin] tracking mode -> %s", ModeName());
+    return mode;
 }
 
 const char* TrackerFeed::ModeName() const {
@@ -97,8 +95,8 @@ const char* TrackerFeed::ModeName() const {
 }
 
 void TrackerFeed::Update(bool enabled) {
-    if (m_cycleRequested.exchange(false, std::memory_order_acquire)) {
-        m_session.CycleMode();
+    if (m_modeRequested.exchange(false, std::memory_order_acquire)) {
+        m_session.SetMode(m_desiredMode.load(std::memory_order_acquire));
         // Drop whichever half the new mode no longer owns. The pose is held
         // across a tracker dropout, so without this a cycle to rotation-only
         // while the tracker is quiet would leave the frozen lean applied to the

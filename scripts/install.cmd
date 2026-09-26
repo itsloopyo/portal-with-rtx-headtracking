@@ -37,10 +37,9 @@ set "ASI_SUBDIR=bin"
 :: whatever the user tuned. Listing an .ini in MOD_DLLS instead puts it through
 :: the unconditional copy and resets every key on every update.
 ::
-:: Empty on purpose. The seed loop copies into EXE_DIR, which ASI_SUBDIR points
-:: at bin\, while the mod resolves HeadTracking.ini from the directory holding
-:: hl2.exe. A seeded copy in bin\ would never be read, and the mod writes its
-:: own default ini next to hl2.exe on first launch anyway.
+:: Empty on purpose. The mod creates CameraUnlock.ini next to hl2.exe on first
+:: launch, importing HeadTracking.ini when an earlier version left one there. A
+:: seeded CameraUnlock.ini would stop that import.
 set "MOD_SEED_FILES="
 :: Version of the vendored Ultimate ASI Loader, recorded in the state file so
 :: the launcher can tell which loader build it is looking at. Leave empty to
