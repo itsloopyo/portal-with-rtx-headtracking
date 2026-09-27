@@ -130,6 +130,7 @@ try {
     Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
     exit 1
 }
+Assert-ReleaseNotBelowCanonicalSince -RepoRoot $projectDir -Version $Version
 
 $tag = "v$Version"
 
