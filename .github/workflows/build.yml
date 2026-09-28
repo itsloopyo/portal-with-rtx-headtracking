@@ -63,16 +63,3 @@ jobs:
             Write-Host "::error::No installer ZIP was produced by 'pixi run package'"
             exit 1
           }
-
-      # The ZIPs are already built by this point, and without this step the only
-      # ways to get a test build to someone are the two the ethics rule exists to
-      # prevent: pushing a scratch branch to a public repo, or cutting a tag. A
-      # branch push cannot be undone - GitHub keeps serving every blob by SHA
-      # after the branch is deleted - so the sanctioned route has to exist.
-      - name: Upload release ZIPs
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: release-zips
-          path: release/*.zip
-          if-no-files-found: error
-          retention-days: 14
