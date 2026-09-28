@@ -46,7 +46,9 @@ build-release = { cmd = "cmake --build build --config Release", depends-on = ["s
 # --no-tests=error because ctest's default exits 0 when it finds no tests at
 # all, so a suite that silently stopped being registered would report success
 # here and in CI, and this is the only gate on the Source camera maths.
-test = { cmd = "ctest --test-dir build -C Debug --output-on-failure --no-tests=error", depends-on = ["build"] }
+test-unit = { cmd = "ctest --test-dir build -C Debug --output-on-failure --no-tests=error -LE differential", depends-on = ["build"] }
+test-differential = { cmd = "ctest --test-dir build -C Debug --output-on-failure --no-tests=error -L differential", depends-on = ["build"] }
+test = { depends-on = ["test-unit", "test-differential"] }
 
 clean = { cmd = """
     powershell -Command "if (Test-Path 'build') { Remove-Item 'build' -Recurse -Force }; Write-Host 'Build artifacts cleaned' -ForegroundColor Green"
@@ -70,7 +72,7 @@ validate-manifest = "node cameraunlock-core/scripts/validate-manifest.mjs"
 # vendored loader exactly as committed - refreshing it is update-deps' job.
 # Depends on test, so no ZIP is built from a tree whose tests or config
 # differential test fail.
-package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test"] }
+package = { cmd = "powershell -ExecutionPolicy Bypass -File scripts/package-release.ps1", depends-on = ["build-release", "test-unit"] }
 
 # Cut a release: pixi run release <major|minor|patch|X.Y.Z>. Unattended - the
 # invocation is the authorization, so the script never asks anything.
