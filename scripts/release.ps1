@@ -82,31 +82,6 @@ function Set-ModVersion {
     [System.IO.File]::WriteAllText($versionPath, $raw)
 }
 
-# Mirrors New-ChangelogFromCommits' insertion so every writer of this file puts
-# its entry in the same place: directly under the "# Changelog" heading, above
-# the entries already there.
-#
-# ReadAllText/WriteAllText with a BOM-less UTF8Encoding because PS 5.1 defaults
-# Get-Content/Set-Content to the system ANSI codepage, which mangles any
-# non-ASCII already in the file on every round trip.
-function Add-ChangelogEntry {
-    param([string]$Path, [string]$Entry)
-    $changelog = [System.IO.File]::ReadAllText($Path)
-    $anchor = '(?s)(# Changelog.*?\r?\n\r?\n)'
-    if ($changelog -notmatch $anchor) {
-        throw "$Path has no '# Changelog' heading to insert the new entry under."
-    }
-    $changelog = $changelog -replace $anchor, "`$1$Entry"
-    $changelog = $changelog.TrimEnd() + "`n"
-    [System.IO.File]::WriteAllText($Path, $changelog, (New-Object System.Text.UTF8Encoding $false))
-}
-
-function Add-MaintenanceChangelogEntry {
-    param([string]$Path, [string]$NewVersion)
-    $date = Get-Date -Format 'yyyy-MM-dd'
-    Add-ChangelogEntry -Path $Path -Entry "## [$NewVersion] - $date`n`n### Changed`n`n- Maintenance release (no user-facing changes).`n`n"
-}
-
 Write-Host ''
 Write-Host '=== Portal with RTX Head Tracking Release ===' -ForegroundColor Cyan
 Write-Host ''
@@ -159,31 +134,13 @@ Write-Host ''
 # before mutating any version file means an abort leaves the tree clean rather
 # than stranding a half-applied bump with no tag.
 Write-Host 'Generating CHANGELOG from commits...' -ForegroundColor Cyan
-$hasTags = git tag -l 2>$null
-if (-not $hasTags) {
-    # No previous tag, so there is no commit range to generate an entry from.
-    # Prepend rather than overwrite: up to the first tag this file is written by
-    # hand, and it carries the history of everything built before the release.
-    $date = Get-Date -Format 'yyyy-MM-dd'
-    $entry = "## [$Version] - $date`n`nFirst release.`n`n"
-    if (Test-Path $changelogPath) {
-        Add-ChangelogEntry -Path $changelogPath -Entry $entry
-    } else {
-        [System.IO.File]::WriteAllText($changelogPath, "# Changelog`n`n$entry", (New-Object System.Text.UTF8Encoding $false))
-    }
-} else {
-    try {
-        New-ChangelogFromCommits -ChangelogPath $changelogPath -Version $Version `
-            -ArtifactPaths @('src/', 'cameraunlock-core', 'scripts/')
-    } catch {
-        if (-not $Force) {
-            Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
-            Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
-            exit 1
-        }
-        Write-Host 'No user-facing commits since last tag - writing maintenance entry (-Force).' -ForegroundColor Yellow
-        Add-MaintenanceChangelogEntry -Path $changelogPath -NewVersion $Version
-    }
+try {
+    New-ChangelogFromCommits -ChangelogPath $changelogPath -Version $Version `
+        -ArtifactPaths @('src/', 'cameraunlock-core', 'scripts/') -Maintenance:$Force
+} catch {
+    Write-Host "Error: $($_.Exception.Message)" -ForegroundColor Red
+    Write-Host 'No user-facing changes to release. Re-run with -Force for a maintenance release.' -ForegroundColor Yellow
+    exit 1
 }
 
 # Step 2 - src/version.h is the canonical version: the packager reads it to
