@@ -83,9 +83,10 @@ BOOL APIENTRY DllMain(HMODULE hModule, DWORD reason, LPVOID /*reserved*/) {
             // STATUS_INVALID_EXCEPTION_HANDLER, and it takes the game with it.
             //
             // Pinning makes FreeLibrary a no-op for us, which is the right
-            // lifetime anyway: the bootstrap thread runs for the whole session,
-            // and the render hook is never uninstalled (see camera_hook.h) - so
-            // this code must stay mapped for as long as the process lives.
+            // lifetime anyway: the receiver and hotkey threads run for the whole
+            // session, and the render and crosshair hooks are never uninstalled
+            // (see camera_hook.h) - so this code must stay mapped for as long as
+            // the process lives.
             PinSelf();
             // The handle is closed straight away; the thread runs on. Nothing
             // ever joins it (see the detach case), so holding the handle would
