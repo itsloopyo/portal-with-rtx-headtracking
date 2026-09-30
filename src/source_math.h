@@ -75,4 +75,27 @@ float BoundProjectedPixel(float pixel, int extent);
 // turns into a spin once the game camera looks steeply up or down.
 void ApplyCameraLocalRotation(float* ang, float dpitch, float dyaw, float droll);
 
+// The angles the weapon has to appear drawn from, through its own narrower
+// projection, for it to land where the world pass draws its axis.
+//
+// The weapon hangs off the clean camera, but the pass that draws it reuses the
+// drawn view's angles through a narrower projection, so the angle between the
+// two cameras is magnified by the ratio of their half-angle tangents. This
+// finds the clean aim axis in the drawn basis, scales its two lateral components by `lateralRatio`
+// (tan(weapon fov / 2) / tan(world fov / 2)), keeps the forward one, and turns
+// the drawn basis by the shortest arc that puts the axis on the scaled
+// direction. A shortest arc adds no spin, so the drawn roll carries through.
+//
+// False, with `out` untouched, when the clean axis is not in front of the drawn
+// view: the weapon is behind the frame then, and a lateral scale has no meaning.
+bool WeaponPassAngles(const float* renderAngles, const float* cleanAngles, float lateralRatio,
+                      float* out);
+
+// Moves a pose (an origin and an angle triple) rigidly with a camera: whatever
+// the pose was relative to the camera at `fromOrigin`/`fromAngles`, it is
+// relative to the camera at `toOrigin`/`toAngles` afterwards, so drawing it
+// from the second camera puts it exactly where the first would have. In place.
+void CarryPose(const float* fromOrigin, const float* fromAngles, const float* toOrigin,
+               const float* toAngles, float* origin, float* angles);
+
 }  // namespace headtracking::source

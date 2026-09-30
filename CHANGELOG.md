@@ -32,6 +32,11 @@
 - The rotation sensitivity (`[Sensitivity] Yaw`, `Pitch`, `Roll`) and position sensitivity (`[Position] SensX`, `SensY`, `SensZ`) settings. Set these in your tracker app instead.
 - With these settings at their shipped defaults the camera moves as it did before.
 
+### Fixed
+
+- The portal gun no longer swings further than the view when you turn your head. It used to move about one and a half times as far as the world, so it drifted off the point it fires at; it now stays pointed there, and the glows on its claws stay on the claws.
+- Leaning your head no longer moves the portal gun across the screen. It stays in your hands where the game puts it.
+
 ## [0.1.0] - 2026-09-05
 
 First release.

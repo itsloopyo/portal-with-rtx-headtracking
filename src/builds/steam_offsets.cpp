@@ -111,6 +111,31 @@ constexpr FovConVarOffsets kFovConVars_20250518 = {
     0x2Cu,      // ConVar::m_fValue
 };
 
+// The viewmodel is posed by C_BaseViewModel::CalcViewModelView, vftable slot
+// 204 of C_BaseViewModel (rva 0x3944D0) in the SDK's declaration order after
+// SendViewModelMatchingSequence, SetWeaponModel and CalcViewModelLag. It ends in
+// `ret 0xC` (owner, eye position, eye angles), adds the weapon's bob, its own
+// bob and the lag, and finishes with SetLocalOrigin then SetLocalAngles. Those
+// two write m_vecOrigin (+0x28C) and m_angRotation (+0x2C8), and each calls
+// InvalidatePhysicsRecursive with POSITION_CHANGED or ANGLES_CHANGED, which is
+// what brings the abs transform up to date - but not the bones, which that
+// function never touches. InvalidateBoneCache is the four-instruction function
+// that stores -FLT_MAX into m_flLastBoneSetupTime (+0x820) and the global model
+// bone counter less one into m_iMostRecentModelBoneCounter (+0x55C).
+//
+// GetViewModel is the call C_BasePlayer::CalcViewModelView makes for index 0
+// and 1 before posing each one: __thiscall, `ret 8`, reading the handle array
+// m_hViewModel at player+0x1184.
+constexpr ViewModelOffsets kViewModel_20250518 = {
+    0x08C340u,  // C_BaseViewModel::CalcViewModelView
+    0x0C4DA0u,  // C_BasePlayer::GetViewModel
+    0x0B9730u,  // C_BaseEntity::SetLocalOrigin
+    0x0B9610u,  // C_BaseEntity::SetLocalAngles
+    0x0A7B60u,  // C_BaseAnimating::InvalidateBoneCache
+    0x28Cu,     // C_BaseEntity::m_vecOrigin
+    0x2C8u,     // C_BaseEntity::m_angRotation
+};
+
 // portal_rtx\bin\client.dll dated 2025-05-18, the build shipped with Steam app
 // 2012840 at PatchVersion 1745010. RenderView is slot 6 of the CViewRender
 // vftable at rva 0x3D1FF0, and its own Telemetry marker names
@@ -119,7 +144,7 @@ extern const BuildProfile kSteamProfile_20250518 = {
     "steam-win32-20250518",
     { 0x6829867Du, 0x005C9000u, 0x00000000u },
     { 0x1DE520u, kViewSetupLayout_20250518, kAimLayout_20250518, kEngineState_20250518,
-      kFovConVars_20250518 },
+      kFovConVars_20250518, kViewModel_20250518 },
 };
 
 }  // namespace headtracking::builds

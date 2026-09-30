@@ -25,7 +25,10 @@
 #include "camera_hook.h"
 
 #include <Windows.h>
+#include <atomic>
+#include <cmath>
 #include <cstdint>
+#include <cstring>
 
 #include "aim_state.h"
 #include "angles.h"
@@ -53,6 +56,27 @@ const builds::BuildProfile* g_profile = nullptr;
 using RenderViewFn = void(__fastcall*)(void* ecx, void* edx, void* view, int clearFlags,
                                        int whatToDraw);
 RenderViewFn g_originalRenderView = nullptr;
+
+// void C_BaseViewModel::CalcViewModelView(C_BasePlayer* owner,
+//     const Vector& eyePosition, const QAngle& eyeAngles)  [__thiscall]
+using CalcViewModelViewFn = void(__fastcall*)(void* viewModel, void* edx, void* owner,
+                                              const float* eyePosition, const float* eyeAngles);
+CalcViewModelViewFn g_originalCalcViewModelView = nullptr;
+
+// C_BaseViewModel* C_BasePlayer::GetViewModel(int index, bool observerOk)  [__thiscall]
+using GetViewModelFn = void*(__fastcall*)(void* player, void* edx, int index, bool observerOk);
+// void C_BaseEntity::SetLocalOrigin(const Vector&) and SetLocalAngles(const QAngle&)
+using SetLocalVectorFn = void(__fastcall*)(void* entity, void* edx, const float* value);
+// void C_BaseAnimating::InvalidateBoneCache()
+using InvalidateBoneCacheFn = void(__fastcall*)(void* entity, void* edx);
+// C_BasePlayer* C_BasePlayer::GetLocalPlayer()
+using LocalPlayerFn = void*(__cdecl*)();
+
+GetViewModelFn        g_getViewModel = nullptr;
+SetLocalVectorFn      g_setLocalOrigin = nullptr;
+SetLocalVectorFn      g_setLocalAngles = nullptr;
+InvalidateBoneCacheFn g_invalidateBoneCache = nullptr;
+LocalPlayerFn         g_localPlayer = nullptr;
 
 // What the pose pipeline contributed to this frame's view, carried to the
 // diagnostic line so it can report the delta alongside the resulting camera.
@@ -149,6 +173,128 @@ void ApplyRotationDelta(const Plugin& plugin, float yawRad, float pitchRad, floa
     }
 }
 
+// ----- The weapon -------------------------------------------------------------
+//
+// The weapon in the player's hands is drawn in a second pass that copies the
+// render view and swaps only its FOV for fovViewmodel (54 widened to 68.38 at
+// 16:9, against the world's 91.31). CalcViewModelView poses the weapon from the
+// CLEAN eye, so under head tracking the angle between it and the drawn view is
+// real, and the narrower projection magnifies it by tan(34.19) / tan(45.66) =
+// 0.664: the weapon swings about 1.5 times as far across the frame as the world
+// does and stops pointing at what it fires at.
+//
+// The weapon has to appear drawn from a camera of its own: the clean eye, at
+// angles that put the clean aim axis where the world pass draws it
+// (source::WeaponPassAngles). The pass itself is left on the render camera, as
+// the stock game has it, and the viewmodel ENTITY is carried by the rigid move
+// that takes that weapon camera onto the render camera. Drawn from the render
+// camera, it then lands exactly where the weapon camera would have drawn it -
+// and so does everything hung off it: its attachments, the particle effects
+// placed from them, and the claw glows and barrel flare RTX Remix lights from
+// the weapon, which Remix places from the render camera on the assumption that
+// the weapon pass shares it. Giving the pass a camera of its own instead fixes
+// the gun and leaves those glows behind, measured at about 70 px at a 15 degree
+// head turn.
+//
+// The clean eye is also why a lean leaves the weapon where it is on screen: it
+// hangs a third of a metre from the eye, a lean is most of that, and the stock
+// game never moves it relative to the eye either. Roll is left as drawn - it
+// turns the picture by the same angle at every FOV.
+//
+// The ratio comes from the render view's two FOV fields, which are exactly the
+// numbers the engine builds both projections from: both horizontal degrees,
+// both widened for the same viewport, so the aspect cancels and horizontal and
+// vertical give the same ratio. The [View] overrides are already in them.
+//
+// Only a viewmodel CalcViewModelView posed since the last RenderView is moved.
+// Its pose is then the clean one the move is defined against, and it is moved
+// once: the next frame poses it afresh from the eye. The pointers recorded are
+// only ever compared with the ones GetViewModel returns now, never followed, so
+// one left behind by a level change cannot be written through.
+
+constexpr int kMaxViewModels = 2;  // GetViewModel's index runs 0..MAX_VIEWMODELS-1
+
+std::atomic<bool> g_viewModelCarryInstalled{false};
+void* g_posedViewModels[kMaxViewModels] = {};
+int   g_posedViewModelCount = 0;
+
+constexpr int kWeaponBurstLines           = 3;
+constexpr int kWeaponEarlyLines           = 15;
+constexpr int kWeaponEarlyIntervalFrames  = 600;
+constexpr int kWeaponSteadyIntervalFrames = 2000;
+
+void LogWeaponCarry(const AimState& aim, const float* weaponAngles, float world, float weaponFov,
+                    float ratio, int carried) {
+    static LogThrottle s_throttle(kWeaponBurstLines, kWeaponEarlyLines,
+                                  kWeaponEarlyIntervalFrames, kWeaponSteadyIntervalFrames);
+    if (!s_throttle.ShouldLog()) return;
+    HT_LOG("[weapon] fov=%.2f/%.2f ratio=%.4f drawn=(p%.2f y%.2f r%.2f) "
+           "weapon=(p%.2f y%.2f r%.2f) carried=%d", world, weaponFov, ratio,
+           aim.render_angles[0], aim.render_angles[1], aim.render_angles[2],
+           weaponAngles[0], weaponAngles[1], weaponAngles[2], carried);
+}
+
+bool IsRenderableFov(float fov) { return std::isfinite(fov) && fov > 0.0f && fov < 179.0f; }
+
+float TanHalfDegrees(float fov) { return std::tan(fov * 0.5f * kDegToRad); }
+
+bool WasPosedThisFrame(const void* viewModel) {
+    for (int i = 0; i < g_posedViewModelCount; ++i) {
+        if (g_posedViewModels[i] == viewModel) return true;
+    }
+    return false;
+}
+
+// Moves the local player's freshly posed viewmodels for a frame whose render
+// camera is final. Nothing moves on an untracked frame, a frame with no weapon
+// FOV (a scripted camera renders 0 there), or an aim axis turned out of the
+// drawn view, where the weapon is off the frame anyway.
+void CarryViewModels(const ViewSetup& view, const AimState& aim) {
+    if (!g_viewModelCarryInstalled.load(std::memory_order_acquire) || !aim.applied ||
+        g_posedViewModelCount == 0) {
+        return;
+    }
+    const float world = view.Fov();
+    const float weaponFov = view.FovViewmodel();
+    if (!IsRenderableFov(world) || !IsRenderableFov(weaponFov)) return;
+
+    const float ratio = TanHalfDegrees(weaponFov) / TanHalfDegrees(world);
+    float weaponAngles[3];
+    if (!source::WeaponPassAngles(aim.render_angles, aim.clean_angles, ratio, weaponAngles)) {
+        return;
+    }
+
+    void* const player = g_localPlayer();
+    if (!player) return;
+
+    const builds::ViewModelOffsets& off = g_profile->offsets.view_model;
+    int carried = 0;
+    for (int i = 0; i < kMaxViewModels; ++i) {
+        void* const viewModel = g_getViewModel(player, nullptr, i, true);
+        if (!viewModel || !WasPosedThisFrame(viewModel)) continue;
+
+        const uint8_t* const fields = static_cast<const uint8_t*>(viewModel);
+        float origin[3], angles[3];
+        std::memcpy(origin, fields + off.local_origin, sizeof(origin));
+        std::memcpy(angles, fields + off.local_angles, sizeof(angles));
+        source::CarryPose(aim.clean_origin, weaponAngles, aim.render_origin, aim.render_angles,
+                          origin, angles);
+        g_setLocalOrigin(viewModel, nullptr, origin);
+        g_setLocalAngles(viewModel, nullptr, angles);
+        g_invalidateBoneCache(viewModel, nullptr);
+        ++carried;
+    }
+    LogWeaponCarry(aim, weaponAngles, world, weaponFov, ratio, carried);
+}
+
+void __fastcall Hook_CalcViewModelView(void* viewModel, void* edx, void* owner,
+                                       const float* eyePosition, const float* eyeAngles) {
+    g_originalCalcViewModelView(viewModel, edx, owner, eyePosition, eyeAngles);
+    if (viewModel && !WasPosedThisFrame(viewModel) && g_posedViewModelCount < kMaxViewModels) {
+        g_posedViewModels[g_posedViewModelCount++] = viewModel;
+    }
+}
+
 // ----- The hook -------------------------------------------------------------
 
 // The tracking work, separated from the detour so the original call can sit
@@ -202,6 +348,7 @@ void ApplyTracking(const ViewSetup& view) {
     Copy3(aim.render_origin, org);
     Copy3(aim.render_angles, ang);
     PublishAimState(aim);
+    CarryViewModels(view, aim);
 
     DiagnosticLog(view, delta);
 }
@@ -242,6 +389,9 @@ void __fastcall Hook_RenderView(void* ecx, void* edx, void* view, int clearFlags
             LogDetourFaultOnce(s_faultLogged, "hook", "RenderView");
         }
     }
+
+    // Consumed or not, a pose belongs to this frame only.
+    g_posedViewModelCount = 0;
 
     g_originalRenderView(ecx, edx, view, clearFlags, whatToDraw);
 }
@@ -300,6 +450,31 @@ bool InstallRenderViewDetour(void* target) {
                          reinterpret_cast<void**>(&g_originalRenderView));
 }
 
+// After RenderView, which is what moves the viewmodels this records. Optional:
+// without it head tracking runs and the weapon keeps the magnified swing.
+void InstallViewModelCarry(uintptr_t base) {
+    constexpr const char* kWeaponNote =
+        " - the weapon in your hands swings further than the view when you turn your head "
+        "(head tracking is unaffected)";
+    if (!g_profile->HasViewModelCarry()) {
+        HT_LOG("[weapon] build profile has no viewmodel addresses%s", kWeaponNote);
+        return;
+    }
+    const builds::ViewModelOffsets& off = g_profile->offsets.view_model;
+    g_getViewModel = reinterpret_cast<GetViewModelFn>(base + off.get_view_model_rva);
+    g_setLocalOrigin = reinterpret_cast<SetLocalVectorFn>(base + off.set_local_origin_rva);
+    g_setLocalAngles = reinterpret_cast<SetLocalVectorFn>(base + off.set_local_angles_rva);
+    g_invalidateBoneCache =
+        reinterpret_cast<InvalidateBoneCacheFn>(base + off.invalidate_bone_cache_rva);
+    g_localPlayer = reinterpret_cast<LocalPlayerFn>(base + g_profile->offsets.aim.local_player_rva);
+    if (InstallDetour("weapon", "CalcViewModelView",
+                      reinterpret_cast<void*>(base + off.calc_view_model_view_rva),
+                      reinterpret_cast<void*>(&Hook_CalcViewModelView),
+                      reinterpret_cast<void**>(&g_originalCalcViewModelView), kWeaponNote)) {
+        g_viewModelCarryInstalled.store(true, std::memory_order_release);
+    }
+}
+
 }  // namespace
 
 bool CameraHook::Install() {
@@ -321,9 +496,12 @@ bool CameraHook::Install() {
 
     ResolveFovConVars(client, *g_profile);
 
-    void* target = reinterpret_cast<void*>(reinterpret_cast<uintptr_t>(client)
-                                           + g_profile->offsets.render_view_rva);
-    return InstallRenderViewDetour(target);
+    const auto base = reinterpret_cast<uintptr_t>(client);
+    if (!InstallRenderViewDetour(reinterpret_cast<void*>(base + g_profile->offsets.render_view_rva))) {
+        return false;
+    }
+    InstallViewModelCarry(base);
+    return true;
 }
 
 }  // namespace headtracking

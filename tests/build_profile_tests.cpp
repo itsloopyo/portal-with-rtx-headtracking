@@ -38,6 +38,7 @@ void TestShippedSteamProfiles() {
         Check(p->HasAimOffsets(), "carries the aim addresses");
         Check(p->HasEngineState(), "carries the gameplay gate");
         Check(p->HasFovConVars(), "carries the FOV cvars");
+        Check(p->HasViewModelCarry(), "carries the viewmodel addresses");
         Check(p->HasCentredCrosshairElements(), "carries the centred-element addresses");
         Check(TraceFieldsFitBuffer(p->offsets.aim),
               "its trace_t offsets are read inside the trace buffer");
@@ -126,6 +127,18 @@ void TestIncompleteProfileStaysDormant() {
     noQuickInfo.offsets.aim.quick_info_paint_rva = 0;
     Check(!noQuickInfo.HasCentredCrosshairElements(),
           "a missing CHUDQuickInfo address disables the centred-element correction");
+
+    BuildProfile noCalcView = kSteamProfile_20250518;
+    noCalcView.offsets.view_model.calc_view_model_view_rva = 0;
+    Check(!noCalcView.HasViewModelCarry(), "a missing CalcViewModelView address disables the carry");
+
+    BuildProfile noSetter = kSteamProfile_20250518;
+    noSetter.offsets.view_model.set_local_angles_rva = 0;
+    Check(!noSetter.HasViewModelCarry(), "a missing SetLocalAngles address disables the carry");
+
+    BuildProfile noLocalPlayer = kSteamProfile_20250518;
+    noLocalPlayer.offsets.aim.local_player_rva = 0;
+    Check(!noLocalPlayer.HasViewModelCarry(), "a missing GetLocalPlayer address disables the carry");
 }
 
 void TestTraceOffsetsAreBoundsChecked() {

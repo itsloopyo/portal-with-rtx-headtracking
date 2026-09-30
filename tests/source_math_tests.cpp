@@ -254,6 +254,141 @@ void TestCameraLocalRotationIsContinuousAtThePole() {
     }
 }
 
+// Where the clean aim axis lands in a pass drawn with `angles` through a
+// projection of horizontal FOV `fovDeg`, in NDC (x right, y up). The screen
+// position is what the player sees, so it is what the weapon pass is held to.
+void AxisNdc(const float* angles, const float* clean, float fovDeg, float& x, float& y) {
+    float fwd[3], right[3], up[3], aim[3], r2[3], u2[3];
+    AngleVectors(angles, fwd, right, up);
+    AngleVectors(clean, aim, r2, u2);
+    const float f = aim[0] * fwd[0] + aim[1] * fwd[1] + aim[2] * fwd[2];
+    const float r = aim[0] * right[0] + aim[1] * right[1] + aim[2] * right[2];
+    const float u = aim[0] * up[0] + aim[1] * up[1] + aim[2] * up[2];
+    const float t = std::tan(fovDeg * 0.5f * 3.14159265f / 180.0f);
+    x = r / f / t;
+    y = u / f / t;
+}
+
+void TestWeaponPassAngles() {
+    std::printf("WeaponPassAngles\n");
+    // The pair this game renders at 1920x1080: fov_desired 75 and viewmodel_fov
+    // 54, both widened for 16:9 (the [view] line reads fov=91.31/68.38).
+    const float worldFov = 91.31f;
+    const float weaponFov = 68.38f;
+    const float ratio = std::tan(weaponFov * 0.5f * 3.14159265f / 180.0f)
+                        / std::tan(worldFov * 0.5f * 3.14159265f / 180.0f);
+
+    const float clean[3] = { 12.0f, 40.0f, 0.0f };
+    float out[3];
+
+    Check(WeaponPassAngles(clean, clean, ratio, out), "coincident cameras are corrected");
+    CheckTriple(out, clean[0], clean[1], clean[2], "coincident cameras leave the pass alone");
+
+    const float turned[3] = { 4.0f, 58.0f, 7.0f };
+    Check(WeaponPassAngles(turned, clean, 1.0f, out), "a ratio of 1 is corrected");
+    CheckTriple(out, turned[0], turned[1], turned[2], "a ratio of 1 leaves the drawn view");
+
+    // The whole point: the axis lands where the world pass puts it, on every
+    // combination of yaw, pitch and roll, not only on a single axis.
+    const float poses[][3] = {
+        { 12.0f, 60.0f, 0.0f },   // yaw only
+        { -8.0f, 40.0f, 0.0f },   // pitch only
+        { 0.0f, 22.0f, 9.0f },    // yaw and roll
+        { 30.0f, 15.0f, -12.0f }, // all three
+        { -40.0f, 75.0f, 20.0f }, // large
+    };
+    for (const auto& pose : poses) {
+        Check(WeaponPassAngles(pose, clean, ratio, out), "an in-front axis is corrected");
+        float wx, wy, gx, gy, ux, uy;
+        AxisNdc(pose, clean, worldFov, wx, wy);
+        AxisNdc(out, clean, weaponFov, gx, gy);
+        AxisNdc(pose, clean, weaponFov, ux, uy);
+        const bool ok = NearEqual(wx, gx, 1e-4f) && NearEqual(wy, gy, 1e-4f);
+        if (!ok) {
+            std::printf("    pose (%g, %g, %g): world (%.5f, %.5f) weapon (%.5f, %.5f)\n",
+                        pose[0], pose[1], pose[2], wx, wy, gx, gy);
+        }
+        Check(ok, "the weapon pass draws the axis where the world pass does");
+        Check(std::fabs(ux) > std::fabs(wx) * 1.4f || std::fabs(uy) > std::fabs(wy) * 1.4f,
+              "and the uncorrected pass does not (the fault this fixes)");
+    }
+
+    // Roll alone moves no axis off centre, so the drawn roll is kept as it is.
+    const float rolled[3] = { clean[0], clean[1], 15.0f };
+    Check(WeaponPassAngles(rolled, clean, ratio, out), "a rolled view is corrected");
+    CheckTriple(out, rolled[0], rolled[1], rolled[2], "a pure roll is left alone");
+
+    const float behind[3] = { 0.0f, clean[1] + 120.0f, 0.0f };
+    const float sentinel[3] = { 1.0f, 2.0f, 3.0f };
+    float untouched[3] = { sentinel[0], sentinel[1], sentinel[2] };
+    Check(!WeaponPassAngles(behind, clean, ratio, untouched), "an axis behind the view is refused");
+    CheckTriple(untouched, sentinel[0], sentinel[1], sentinel[2], "and the output is left alone");
+}
+
+// A world point's screen position in a camera, in NDC.
+void PointNdc(const float* point, const float* origin, const float* angles, float fovDeg,
+              float& x, float& y) {
+    float fwd[3], right[3], up[3];
+    AngleVectors(angles, fwd, right, up);
+    const float d[3] = { point[0] - origin[0], point[1] - origin[1], point[2] - origin[2] };
+    const float f = d[0] * fwd[0] + d[1] * fwd[1] + d[2] * fwd[2];
+    const float t = std::tan(fovDeg * 0.5f * 3.14159265f / 180.0f);
+    x = (d[0] * right[0] + d[1] * right[1] + d[2] * right[2]) / f / t;
+    y = (d[0] * up[0] + d[1] * up[1] + d[2] * up[2]) / f / t;
+}
+
+// A point fixed to a pose, a given distance along each of its axes.
+void PointOnPose(const float* origin, const float* angles, float f, float r, float u,
+                 float* out) {
+    float fwd[3], right[3], up[3];
+    AngleVectors(angles, fwd, right, up);
+    for (int i = 0; i < 3; ++i) out[i] = origin[i] + fwd[i] * f + right[i] * r + up[i] * u;
+}
+
+void TestCarryPose() {
+    std::printf("CarryPose\n");
+    const float eye[3] = { -960.0f, -128.0f, 210.6f };
+    const float clean[3] = { 5.0f, 90.0f, 0.0f };
+    // The gun as CalcViewModelView leaves it: at the eye, turned a little by bob.
+    const float gunOrigin[3] = { eye[0] + 0.3f, eye[1] - 0.2f, eye[2] - 0.4f };
+    const float gunAngles[3] = { 6.0f, 91.0f, 0.5f };
+
+    float origin[3] = { gunOrigin[0], gunOrigin[1], gunOrigin[2] };
+    float angles[3] = { gunAngles[0], gunAngles[1], gunAngles[2] };
+    CarryPose(eye, clean, eye, clean, origin, angles);
+    CheckTriple(origin, gunOrigin[0], gunOrigin[1], gunOrigin[2], "one camera leaves the origin");
+    CheckTriple(angles, gunAngles[0], gunAngles[1], gunAngles[2], "one camera leaves the angles");
+
+    // Head tracking's two cameras: the frame drawn from a leaned, turned eye,
+    // the weapon camera on the clean eye at its corrected angles. Carried from
+    // the second to the first, every point of the gun has to land on the pixel
+    // the weapon camera would have drawn it at - the claw tip and the muzzle
+    // as well as the gun's own origin.
+    const float leaned[3] = { eye[0] + 7.87f, eye[1] - 2.0f, eye[2] + 1.5f };
+    const float turned[3] = { 15.0f, 75.0f, 4.0f };
+    const float weaponFov = 68.38f;
+    const float ratio = std::tan(weaponFov * 0.5f * 3.14159265f / 180.0f)
+                        / std::tan(91.31f * 0.5f * 3.14159265f / 180.0f);
+    float weapon[3];
+    Check(WeaponPassAngles(turned, clean, ratio, weapon), "the weapon camera resolves");
+    CarryPose(eye, weapon, leaned, turned, origin, angles);
+
+    const float parts[][3] = { { 14.0f, 6.0f, -5.0f }, { 22.0f, 4.0f, -3.0f }, { 8.0f, 9.0f, -9.0f } };
+    for (const auto& part : parts) {
+        float before[3], after[3];
+        PointOnPose(gunOrigin, gunAngles, part[0], part[1], part[2], before);
+        PointOnPose(origin, angles, part[0], part[1], part[2], after);
+        float bx, by, ax, ay;
+        PointNdc(before, eye, weapon, weaponFov, bx, by);
+        PointNdc(after, leaned, turned, weaponFov, ax, ay);
+        const bool same = NearEqual(bx, ax, 1e-4f) && NearEqual(by, ay, 1e-4f);
+        if (!same) {
+            std::printf("    weapon camera (%.5f, %.5f) carried (%.5f, %.5f)\n", bx, by, ax, ay);
+        }
+        Check(same, "a point on the gun lands where the weapon camera would draw it");
+    }
+}
+
 }  // namespace
 
 int RunSourceMathTests() {
@@ -265,5 +400,7 @@ int RunSourceMathTests() {
     TestCameraLocalRotationIsContinuousAtThePole();
     TestFovScaleRoundTrip();
     TestBoundProjectedPixel();
+    TestWeaponPassAngles();
+    TestCarryPose();
     return g_failures;
 }

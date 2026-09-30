@@ -97,6 +97,24 @@ struct EngineStateOffsets {
     uint16_t slot_get_level_name;
 };
 
+// The weapon in the player's hands. It is drawn through fovViewmodel from the
+// render view, so under head tracking it swings further across the frame than
+// the world moves; the mod carries the viewmodel entity to where that pass
+// draws it in the right place. Everything is read or called on the viewmodel
+// CalcViewModelView has just posed from the clean eye, which is unparented, so
+// its local origin and angles are its world ones. The setters only mark the
+// abs transform dirty, so the bone cache is dropped by hand: bones built
+// earlier in the frame would otherwise draw the pose from before the move.
+struct ViewModelOffsets {
+    uint32_t calc_view_model_view_rva;  // C_BaseViewModel::CalcViewModelView(owner, eyePos, eyeAng)
+    uint32_t get_view_model_rva;        // C_BasePlayer::GetViewModel(int index, bool observerOk)
+    uint32_t set_local_origin_rva;      // C_BaseEntity::SetLocalOrigin(const Vector&)
+    uint32_t set_local_angles_rva;      // C_BaseEntity::SetLocalAngles(const QAngle&)
+    uint32_t invalidate_bone_cache_rva; // C_BaseAnimating::InvalidateBoneCache()
+    uint32_t local_origin;              // byte offset of C_BaseEntity::m_vecOrigin
+    uint32_t local_angles;              // byte offset of C_BaseEntity::m_angRotation
+};
+
 // The whole surface one client.dll build pins.
 struct OffsetTable {
     uint32_t render_view_rva;  // CViewRender::RenderView, RVA in client.dll
@@ -104,6 +122,7 @@ struct OffsetTable {
     AimOffsets aim;
     EngineStateOffsets engine;
     FovConVarOffsets fov;
+    ViewModelOffsets view_model;
 };
 
 // One entry per shipped Portal with RTX client.dll build we have offsets for. The
@@ -158,6 +177,16 @@ struct BuildProfile {
     // just leaves the [View] Fov keys inert.
     bool HasFovConVars() const {
         return offsets.fov.fov_desired_rva != 0 && offsets.fov.viewmodel_fov_rva != 0;
+    }
+
+    // The carry also needs the local player, so it rides on the aim addresses'
+    // GetLocalPlayer.
+    bool HasViewModelCarry() const {
+        const ViewModelOffsets& vm = offsets.view_model;
+        return vm.calc_view_model_view_rva != 0 && vm.get_view_model_rva != 0 &&
+               vm.set_local_origin_rva != 0 && vm.set_local_angles_rva != 0 &&
+               vm.invalidate_bone_cache_rva != 0 &&
+               vm.local_origin != 0 && vm.local_angles != 0 && offsets.aim.local_player_rva != 0;
     }
 };
 
